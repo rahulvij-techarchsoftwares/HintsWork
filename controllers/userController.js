@@ -7,54 +7,73 @@ const { sendEmail } = require("../service/email");
 
 const JWT_SECRET = process.env.JWT_SECRET || "your_secret_key";
 
-exports.signupUser = async (req, res) => {
+const normalize = (s = "") => String(s).replace(/\s+/g, "").toLowerCase();
+
+async function isAdminOrSuperAdmin(userId) {
+  const user = await User.findById(userId).select("role");
+  if (!user || !user.role) return false;
+
+  const role = await Role.findById(user.role).select("roleName");
+  if (!role) return false;
+
+  const roleName = normalize(role.roleName);
+  return roleName === "admin" || roleName === "superadmin";
+}
+
+exports.signupUser = async (req, res) => { 
   try {
     const {
       phone,
       email,
       password,
-      role,
+      role, 
     } = req.body;
 
-    const existingUser = await User.findOne({
-      $or: [{ email }]
-    });
+    const existingUser = await User.findOne({ $or: [{ email }] });
 
     if (existingUser) {
       return res.status(400).json({ message: "Username or email already exists." });
     }
 
-    const selectedRole = await Role.findById(role);
-    if (!selectedRole) {
-      return res.status(400).json({ message: "Invalid role selected." });
+    let selectedRole;
+
+    if (role) {
+      selectedRole = await Role.findById(role);
+      if (!selectedRole) {
+        return res.status(400).json({ message: "Invalid role selected." });
+      }
+      const normalizedRole = selectedRole.roleName.replace(/\s+/g, "").toLowerCase();
+      if (normalizedRole !== "user") {
+        return res.status(400).json({ message: "You can only register with role 'user'." });
+      }
+    } else {
+      selectedRole = await Role.findOne({
+        roleName: { $regex: /^user$/i }
+      });
+      if (!selectedRole) {
+        return res.status(400).json({ message: "Default role 'user' not found in database." });
+      }
     }
-
     const hashedPassword = await bcrypt.hash(password, 10);
-
     const newUser = new User({
       phone,
       email,
       password: hashedPassword,
-      role,
+      role: selectedRole._id, 
     });
-
     await newUser.save();
-
     const token = jwt.sign({ userId: newUser._id }, JWT_SECRET, {
       expiresIn: "5h"
     });
-
-
     res.cookie('token', token, {
       httpOnly: true, 
-      secure: process.env.NODE_ENV === 'production' ? true : false,
-      sameSite: 'Lax', 
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'Lax',
       maxAge: 5 * 60 * 60 * 1000 
     });
-
     await sendEmail({
       to: newUser.email,
-      subject: "🎉 Welcome to Our Platform!",
+      subject: "Welcome to Our Platform!",
       body: `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
           <h2 style="color: #4CAF50;">🎉 Welcome to Our Platform!</h2>
@@ -77,10 +96,8 @@ exports.signupUser = async (req, res) => {
         </div>
       `
     });
-
     res.status(201).json({
       message: "User registered successfully",
-      // token,
       user: {
         id: newUser._id,
         email: newUser.email,
@@ -210,5 +227,23 @@ exports.authenticate = async (req, res, next) => {
     next();
   } catch (err) {
     return res.status(401).json({ message: "Invalid or expired token." });
+  }
+};
+
+
+exports.getAllUsers = async (req, res) => {
+  try {
+    const userId = req.user?.id || req.user?.userId;
+    if (!(await isAdminOrSuperAdmin(userId))) {
+      return res.status(403).json({ message: "Access denied. Only Admin/SuperAdmin can view users." });
+    }
+    const users = await User.find()
+      .select("-password") 
+      .populate("role")
+      .sort({ createdAt: -1 });
+    return res.status(200).json({ users });
+  } catch (error) {
+    console.error("getAllUsers error:", error);
+    return res.status(500).json({ message: "Server error", error: error.message });
   }
 };

@@ -8,6 +8,8 @@ const cors = require('cors');
 const roleRoutes = require("./routes/roleRoutes");
 const authRoutes = require("./routes/userRoutes");
 const bookdemoformRoutes = require("./routes/bookdemoformRoutes");
+const brandRoutes = require("./routes/brandRoutes");
+const sponsorRoutes = require("./routes/sponsorRoutes");
 const jwt = require('jsonwebtoken');
 const { authenticateSocket } = require("./controllers/userController");
 
@@ -58,6 +60,8 @@ io.on("connection", (socket) => {
 app.use("/api", roleRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api", bookdemoformRoutes);
+app.use("/brands", brandRoutes);
+app.use("/sponsers", sponsorRoutes);
 
 
 
