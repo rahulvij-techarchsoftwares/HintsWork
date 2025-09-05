@@ -23,6 +23,8 @@ async function isAdminOrSuperAdmin(userId) {
 exports.signupUser = async (req, res) => { 
   try {
     const {
+      firstName,
+      lastName,
       phone,
       email,
       password,
@@ -54,23 +56,30 @@ exports.signupUser = async (req, res) => {
         return res.status(400).json({ message: "Default role 'user' not found in database." });
       }
     }
+
     const hashedPassword = await bcrypt.hash(password, 10);
     const newUser = new User({
+      firstName,
+      lastName,
       phone,
       email,
       password: hashedPassword,
       role: selectedRole._id, 
     });
+
     await newUser.save();
+
     const token = jwt.sign({ userId: newUser._id }, JWT_SECRET, {
       expiresIn: "5h"
     });
+
     res.cookie('token', token, {
       httpOnly: true, 
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'Lax',
       maxAge: 5 * 60 * 60 * 1000 
     });
+
     await sendEmail({
       to: newUser.email,
       subject: "Welcome to Our Platform!",
@@ -78,7 +87,7 @@ exports.signupUser = async (req, res) => {
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
           <h2 style="color: #4CAF50;">🎉 Welcome to Our Platform!</h2>
           <p style="font-size: 16px; color: #333;">
-            Hi <strong>${newUser.email}</strong>,
+            Hi <strong>${newUser.firstName} ${newUser.lastName}</strong>,
           </p>
           <p style="font-size: 16px; color: #333;">
             You have successfully signed up with us. We're thrilled to have you on board!
@@ -96,10 +105,13 @@ exports.signupUser = async (req, res) => {
         </div>
       `
     });
+
     res.status(201).json({
       message: "User registered successfully",
       user: {
         id: newUser._id,
+        firstName: newUser.firstName,
+        lastName: newUser.lastName,
         email: newUser.email,
         role: selectedRole.roleName
       }
@@ -108,6 +120,7 @@ exports.signupUser = async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 };
+
 
 
 exports.loginUser = async (req, res) => {
@@ -247,3 +260,59 @@ exports.getAllUsers = async (req, res) => {
     return res.status(500).json({ message: "Server error", error: error.message });
   }
 };
+
+
+exports.updateUser = async (req, res) => {
+  try {
+    const { id } = req.params; 
+    const { firstName, lastName, phone, email, password, status } = req.body;
+
+    const userToUpdate = await User.findById(id).populate("role");
+    if (!userToUpdate) {
+      return res.status(404).json({ message: "User not found." });
+    }
+
+    // ✅ Check if current user is admin/superadmin
+    const isAdmin = await isAdminOrSuperAdmin(req.user.id);
+
+    // Permission check
+    if (req.user.id.toString() !== id.toString() && !isAdmin) {
+      return res.status(403).json({ message: "You are not allowed to update this user." });
+    }
+
+    // Update allowed fields
+    if (firstName !== undefined) userToUpdate.firstName = firstName;
+    if (lastName !== undefined) userToUpdate.lastName = lastName;
+    if (phone !== undefined) userToUpdate.phone = phone;
+    if (email !== undefined) userToUpdate.email = email;
+
+    // Only admin/superadmin can update status
+    if (status !== undefined && isAdmin) {
+      userToUpdate.status = status;
+    }
+
+    // Password change
+    if (password !== undefined) {
+      const hashedPassword = await bcrypt.hash(password, 10);
+      userToUpdate.password = hashedPassword;
+    }
+
+    await userToUpdate.save();
+
+    res.status(200).json({
+      message: "User updated successfully",
+      user: {
+        id: userToUpdate._id,
+        firstName: userToUpdate.firstName,
+        lastName: userToUpdate.lastName,
+        phone: userToUpdate.phone,
+        email: userToUpdate.email,
+        role: userToUpdate.role.roleName,
+        status: userToUpdate.status
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
