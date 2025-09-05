@@ -271,34 +271,22 @@ exports.updateUser = async (req, res) => {
     if (!userToUpdate) {
       return res.status(404).json({ message: "User not found." });
     }
-
-    // ✅ Check if current user is admin/superadmin
     const isAdmin = await isAdminOrSuperAdmin(req.user.id);
-
-    // Permission check
     if (req.user.id.toString() !== id.toString() && !isAdmin) {
       return res.status(403).json({ message: "You are not allowed to update this user." });
     }
-
-    // Update allowed fields
     if (firstName !== undefined) userToUpdate.firstName = firstName;
     if (lastName !== undefined) userToUpdate.lastName = lastName;
     if (phone !== undefined) userToUpdate.phone = phone;
     if (email !== undefined) userToUpdate.email = email;
-
-    // Only admin/superadmin can update status
     if (status !== undefined && isAdmin) {
       userToUpdate.status = status;
     }
-
-    // Password change
     if (password !== undefined) {
       const hashedPassword = await bcrypt.hash(password, 10);
       userToUpdate.password = hashedPassword;
     }
-
     await userToUpdate.save();
-
     res.status(200).json({
       message: "User updated successfully",
       user: {
