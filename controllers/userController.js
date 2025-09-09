@@ -3,8 +3,8 @@ const jwt = require("jsonwebtoken");
 const User = require("../models/userModel");
 const Role = require("../models/roleModel");
 const mongoose = require("mongoose");
-const { sendEmail } = require("../service/email");
-
+const { sendEmail, generateOTP } = require("../service/email");
+const Otp = require("../models/otpModel"); 
 const JWT_SECRET = process.env.JWT_SECRET || "your_secret_key";
 
 const normalize = (s = "") => String(s).replace(/\s+/g, "").toLowerCase();
@@ -304,3 +304,64 @@ exports.updateUser = async (req, res) => {
   }
 };
 
+
+
+exports.sendOtpController = async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) {
+      return res.status(400).json({ success: false, message: "Email is required" });
+    }
+    const otp = generateOTP();
+    await Otp.deleteMany({ email });
+    await Otp.create({ email, otp });
+    const mailData = {
+      to: email,
+      subject: "Your OTP Code",
+      body: `<p>Your OTP is: <b>${otp}</b>. It is valid for 5 minutes.</p>`,
+    };
+    const response = await sendEmail(mailData);
+    if (response.success) {
+      return res.status(200).json({
+        success: true,
+        message: "OTP sent successfully",
+      });
+    } else {
+      return res.status(500).json({ success: false, message: "Failed to send OTP" });
+    }
+  } catch (error) {
+    console.error("Error in sendOtpController:", error);
+    return res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+
+
+exports.verifyOtpController = async (req, res) => {
+  try {
+    const { email, otp } = req.body;
+    if (!email || !otp) {
+      return res.status(400).json({
+        success: false,
+        message: "Email and OTP are required",
+      });
+    }
+    const record = await Otp.findOne({ email, otp });
+    if (!record) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid or expired OTP",
+      });
+    }
+    await Otp.deleteOne({ _id: record._id });
+    return res.status(200).json({
+      success: true,
+      message: "OTP verified successfully",
+    });
+  } catch (error) {
+    console.error("Error in verifyOtpController:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Server error",
+    });
+  }
+};

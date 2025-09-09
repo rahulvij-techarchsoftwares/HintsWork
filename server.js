@@ -29,7 +29,7 @@ const io = new Server(server, {
 });
 
 app.use(cors({
-  origin: 'http://localhost:3000',
+  origin: ["http://localhost:3000", "http://localhost:3001"],
   credentials: true,
 }));
 
@@ -41,21 +41,6 @@ app.use((req, res, next) => {
   next();
 });
 
-io.use(authenticateSocket);
-
-
-io.on("connection", (socket) => {
-  console.log("⚡ User connected:", socket.id);
-
-  socket.on("join_ticket", (ticketId) => {
-    socket.join(ticketId);
-    console.log(`🛠️ Socket ${socket.id} joined ticket room: ${ticketId}`);
-  });
-
-  socket.on("disconnect", () => {
-    console.log("🔌 User disconnected:", socket.id);
-  });
-});
 
 app.use("/api", roleRoutes);
 app.use("/api/auth", authRoutes);
